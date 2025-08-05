@@ -1,99 +1,113 @@
-<!doctype html>
-
-<!--<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-    <link rel="stylesheet" href="//stackpath.bootstrapcdn.com/bootstrap/4.2.1/css/bootstrap.min.css" integrity="sha384-GJzZqFGwb1QTTN6wy59ffF1BuGJpLSa9DkKMp0DgiMDm4iYMj70gZWKYbI706tWS" crossorigin="anonymous">
-    <style>
-      .bd-placeholder-img {
-        font-size: 1.125rem;
-        text-anchor: middle;
-      }
-
-      @media (min-width: 768px) {
-        .bd-placeholder-img-lg {
-          font-size: 3.5rem;
-        }
-      }
-    </style>
-    <link rel="stylesheet" href="/static/style.css">
-
-    <title>yolov5 object detection</title>
-  </head>
-  <body class="text-center">
-    
-    <form class="form-signin" method=post enctype=multipart/form-data>
-        <img class="mb-4" src="/static/pytorch.png" alt="" width="72">
-        <h1 class="h3 mb-3 font-weight-normal">Upload any image</h1>
-        <input type="file" name="file" class="form-control-file" id="inputfile">
-        <br/>
-        <button class="btn btn-lg btn-primary btn-block" type="submit">Upload</button>
-        <p class="mt-5 mb-3 text-muted">Built using Pytorch & Flask</p>
-    </form>
-    <script src="//code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
-    <script src="//cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.6/umd/popper.min.js" integrity="sha384-wHAiFfRlMFy6i5SRaxvfOCifBUQy1xHdJ/yoi7FRNXMRBu5WHdZYu1hA6ZOblgut" crossorigin="anonymous"></script>
-    <script src="//stackpath.bootstrapcdn.com/bootstrap/4.2.1/js/bootstrap.min.js" integrity="sha384-B0UglyR+jN6CkvvICOB2joaf5I4l3gm9GU6Hc1og6Ls7i6U/mkkaduKaBhlAXv9k" crossorigin="anonymous"></script>
-    <script type="text/javascript">
-      $('#inputfile').bind('change', function() {
-          let fileSize = this.files[0].size/1024/1024; // this gives in MB
-          if (fileSize > 10) {
-            $("#inputfile").val(null);
-            alert('file is too big. images more than 10MB are not allowed')
-            return
-          }
-
-          let ext = $('#inputfile').val().split('.').pop().toLowerCase();
-          if($.inArray(ext, ['jpg','jpeg']) == -1) {
-            $("#inputfile").val(null);
-            alert('only jpeg/jpg files are allowed!');
-          }
-      });
-    </script>
-  </body>
-</html>-->
-
 <!DOCTYPE html>
 <html>
-  <head>
+<head>
     <meta charset="utf-8">
     <meta content="width=device-width, initial-scale=1.0" name="viewport">
-
-    <title>YOLOV5 Real Time Inference</title>
+    <title>YOLOV5 Real Time Client-Side Inference</title>
+    <script src="https://cdn.socket.io/4.5.2/socket.io.min.js" integrity="sha384-H4AQLiPZfYWEQuGiuCEhSwsCgr8TTcm3vEpsWeDos/iOPurDXYmBC5bPXBbM61b5" crossorigin="anonymous"></script>
     <style>
-      .corner {
-        border-radius: 25px;
-        border: 5px solid #212aad;
-        padding: 0px;
-        width:60%;
-        height:auto;
-        text-align: center;
-      }
-
-      .video-container {
-        justify-content: center;
-        text-align: center;
-        height:100%;
-        /*border: 1px solid black;*/
-      }
-      
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 900px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .video-container {
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .video-box {
+            text-align: center;
+            margin: 10px;
+        }
+        h2 {
+            font-size: 1.2em;
+            color: #555;
+        }
+        video, img {
+            border: 2px solid #212aad;
+            border-radius: 8px;
+            background: #000;
+        }
+        /* Hide the canvas as it's just for processing */
+        #canvas {
+            display: none;
+        }
     </style>
-  </head>
-  
-  <body >
-      <div class="container">
-        <div class="row" style="text-align: center; width:100%;">
-          <img src="../static/pytorch.png" style="width:40px; position:relative; left: -10px; display:inline-block;">
-            <h1 style="text-align: center; display:inline-block;">Template for YOLOV5 Object Detection Model Real-Time Inference Using Web Cam</h1>
-          </img>
-          <h2 style="text-align: center;">Built by Zhili</h2>
+</head>
+<body>
+    <div class="container">
+        <h1>YOLOv5 Object Detection - Client-Side Webcam</h1>
+        <div class="video-container">
+            <div class="video-box">
+                <h2>Your Webcam</h2>
+                <video id="video" width="416" height="416" autoplay></video>
+            </div>
+            <div class="video-box">
+                <h2>Processed by YOLOv5</h2>
+                <img id="processed_image" width="416" height="416" />
+            </div>
         </div>
-      </div>
-  
-      <div class="video-container">
-          <img src="{{ url_for('video') }}" class="corner"></img>
-          <!--<img src="../static/pytorch.png" class="corner"></img>-->
-          <!--<img src="{{ url_for('video') }}" width="50%"/>-->
-      </div>
-    </body>
+        <!-- Canvas is used to capture frames from the video -->
+        <canvas id="canvas" width="640" height="640"></canvas>
+    </div>
+
+    <script type="text/javascript">
+        document.addEventListener("DOMContentLoaded", function() {
+            // Establish a WebSocket connection
+            const socket = io.connect(location.protocol + '//' + document.domain + ':' + location.port);
+
+            const video = document.getElementById('video');
+            const canvas = document.getElementById('canvas');
+            const context = canvas.getContext('2d');
+            const processed_image = document.getElementById('processed_image');
+
+            // --- Get Webcam Access ---
+            if (navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(function (stream) {
+                        video.srcObject = stream;
+                    })
+                    .catch(function (error) {
+                        console.log("Something went wrong with webcam access!", error);
+                        alert("Could not access the webcam. Please allow camera access and refresh the page.");
+                    });
+            }
+
+            // --- Send Frames to Server for Processing ---
+            // Set an interval to capture and send a frame every 100ms (10 FPS)
+            // You can adjust this value for higher/lower FPS.
+            setInterval(() => {
+                // Draw the current video frame onto the canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Get the image data from the canvas as a JPEG base64 string
+                const imageData = canvas.toDataURL('image/jpeg', 0.9); // Quality 0.9
+                
+                // Send the image data to the server via WebSocket
+                socket.emit('image', imageData);
+            }, 100);
+
+            // --- Receive Processed Frames from Server ---
+            socket.on('response_back', function(image_data) {
+                // This function is called when the server sends back the processed image
+                // Update the 'src' of the image element to display the new image
+                processed_image.src = 'data:image/jpeg;base64,' + image_data;
+            });
+        });
+    </script>
+</body>
 </html>
