@@ -1,6 +1,6 @@
 """
-Simple app to upload an image via a web form 
-and view the inference results on the image in the browser.
+App to stream video from a client's webcam, process it with YOLOv5 on the server,
+and stream the results back to the client.
 """
 import argparse
 import io
@@ -8,145 +8,88 @@ import os
 from PIL import Image
 import cv2
 import numpy as np
-
 import torch
+import base64
 from flask import Flask, render_template, request, redirect, Response
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
+# Wrap the app with SocketIO
+socketio = SocketIO(app)
 
+# Load YOLOv5 Model
+try:
+    model = torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True, force_reload=False)
+except Exception as e:
+    # If a custom model is needed, load it here.
+    # For example: model = torch.hub.load("ultralytics/yolov5", "custom", path="./best_damage.pt", force_reload=True)
+    print(f"Error loading model: {e}")
+    # Fallback or exit if necessary
+    model = torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True, force_reload=True)
 
-#'''
-# Load Pre-trained Model
-model = torch.hub.load(
-        "ultralytics/yolov5", "yolov5s", pretrained=True, force_reload=True
-        )#.autoshape()  # force_reload = recache latest code
-#'''
-# Load Custom Model
-#model = torch.hub.load("ultralytics/yolov5", "custom", path = "./best_damage.pt", force_reload=True)
 
 # Set Model Settings
 model.eval()
 model.conf = 0.6  # confidence threshold (0-1)
-model.iou = 0.45  # NMS IoU threshold (0-1) 
+model.iou = 0.45  # NMS IoU threshold (0-1)
 
-from io import BytesIO
+def process_and_encode_image(data_image):
+    """
+    Receives a base64 encoded image, decodes it, runs YOLO inference,
+    and returns the processed image encoded in base64.
+    """
+    # Decode the base64 string
+    # The string might contain a data URL prefix 'data:image/jpeg;base64,', remove it.
+    if "," in data_image:
+        header, data = data_image.split(',', 1)
+    else:
+        data = data_image
+    
+    img_bytes = base64.b64decode(data)
+    img = Image.open(io.BytesIO(img_bytes))
 
-def gen():
-    cap=cv2.VideoCapture(0)
-    # Read until video is completed
-    while(cap.isOpened()):
-        
-        # Capture frame-by-fram ## read the camera frame
-        success, frame = cap.read()
-        if success == True:
+    # Run inference
+    results = model(img, size=640)
 
-            ret,buffer=cv2.imencode('.jpg',frame)
-            frame=buffer.tobytes()
-            
-            #print(type(frame))
+    # Render results on the image
+    results.render()  # updates results.imgs with boxes and labels
+    
+    # Squeeze the image array to remove single-dimensional entries
+    processed_img_arr = np.squeeze(results.render())
 
-            img = Image.open(io.BytesIO(frame))
-            results = model(img, size=640)
-            #print(results)
-            #print(results.pandas().xyxy[0])
-            #results.render()  # updates results.imgs with boxes and labels
-            results.print()  # print results to screen
-            #results.show() 
-            #print(results.imgs)
-            #print(type(img))
-            #print(results)
-            #plt.imshow(np.squeeze(results.render()))
-            #print(type(img))
-            #print(img.mode)
-            
-            #convert remove single-dimensional entries from the shape of an array
-            img = np.squeeze(results.render()) #RGB
-            # read image as BGR
-            img_BGR = cv2.cvtColor(img, cv2.COLOR_RGB2BGR) #BGR
+    # Convert the processed image (which is in RGB format) to a PIL Image
+    processed_img = Image.fromarray(processed_img_arr)
+    
+    # Encode the processed image to JPEG in a byte buffer
+    buffered = io.BytesIO()
+    processed_img.save(buffered, format="JPEG")
+    
+    # Get the base64-encoded string
+    img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
+    
+    return img_str
 
-            #print(type(img))
-            #print(img.shape)
-            #frame = img
-            #ret,buffer=cv2.imencode('.jpg',img)
-            #frame=buffer.tobytes()
-            #print(type(frame))
-            #for img in results.imgs:
-                #img = Image.fromarray(img)
-            #ret,img=cv2.imencode('.jpg',img)
-            #img=img.tobytes()
 
-            #encode output image to bytes
-            #img = cv2.imencode('.jpg', img)[1].tobytes()
-            #print(type(img))
-        else:
-            break
-        #print(cv2.imencode('.jpg', img)[1])
-
-        #print(b)
-        #frame = img_byte_arr
-
-        # Encode BGR image to bytes so that cv2 will convert to RGB
-        frame = cv2.imencode('.jpg', img_BGR)[1].tobytes()
-        #print(frame)
-        
-        yield(b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
+@socketio.on('image')
+def handle_image(data_image):
+    """
+    This function is called when a client sends an 'image' event.
+    It processes the image and emits a 'response_back' event with the result.
+    """
+    processed_img_str = process_and_encode_image(data_image)
+    # Emit the processed image back to the client
+    emit('response_back', processed_img_str)
 
 @app.route('/')
 def index():
-    
+    """Home page."""
     return render_template('index.html')
 
-@app.route('/video')
-def video():
-    """Video streaming route. Put this in the src attribute of an img tag."""
-
-    return Response(gen(),
-                        mimetype='multipart/x-mixed-replace; boundary=frame')
-'''                        
-@app.route('/video')
-def video():
-    return Response(generate_frames(),mimetype='multipart/x-mixed-replace; boundary=frame')
-'''
-'''
-@app.route("/", methods=["GET", "POST"])
-def predict():
-    if request.method == "POST":
-        if "file" not in request.files:
-            return redirect(request.url)
-        file = request.files["file"]
-        if not file:
-            return
-
-        img_bytes = file.read()
-        img = Image.open(io.BytesIO(img_bytes))
-        results = model(img, size=640)
-
-        # for debugging
-        # data = results.pandas().xyxy[0].to_json(orient="records")
-        # return data
-
-        results.render()  # updates results.imgs with boxes and labels
-        for img in results.imgs:
-            img_base64 = Image.fromarray(img)
-            img_base64.save("static/image0.jpg", format="JPEG")
-        return redirect("static/image0.jpg")
-
-    return render_template("index.html")
-'''
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Flask app exposing yolov5 models")
+    parser = argparse.ArgumentParser(description="Flask app exposing YOLOv5 models")
     parser.add_argument("--port", default=5000, type=int, help="port number")
     args = parser.parse_args()
-    '''
-    model = torch.hub.load(
-        "ultralytics/yolov5", "yolov5s", pretrained=True, force_reload=True
-    ).autoshape()  # force_reload = recache latest code
-    model.eval()
-    '''
-    app.run(host="0.0.0.0", port=args.port)  # debug=True causes Restarting with stat
 
-# Docker Shortcuts
-# docker build --tag yolov5 .
-# docker run --env="DISPLAY" --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" --device="/dev/video0:/dev/video0" yolov5
+    # Use socketio.run for development.
+    # It will use the best available async server (eventlet or gevent).
+    socketio.run(app, host="0.0.0.0", port=args.port)
